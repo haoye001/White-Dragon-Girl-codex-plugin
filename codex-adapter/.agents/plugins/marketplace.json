@@ -1,0 +1,32 @@
+{
+  "name": "bailong-local",
+  "interface": {
+    "displayName": "白龙桌宠合集"
+  },
+  "plugins": [
+    {
+      "name": "bailong-pet",
+      "source": {
+        "source": "local",
+        "path": "./plugins/bailong-pet"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    },
+    {
+      "name": "dsh-dragon",
+      "policy": {
+        "authentication": "ON_INSTALL",
+        "installation": "AVAILABLE"
+      },
+      "category": "Productivity",
+      "source": {
+        "path": "./plugins/dsh-dragon",
+        "source": "local"
+      }
+    }
+  ]
+}

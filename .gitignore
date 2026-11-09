@@ -1,0 +1,14 @@
+.runtime/
+__pycache__/
+*.pyc
+*.frames
+*.webp
+*.mp4
+/preview.png
+/sample.jpg
+/tmp7q5ap2q8/
+/tmp8d8jntki/
+/tmpxjdvjcaf/
+codex-adapter/plugins/*/.mcp.json
+codex-adapter/plugins/bailong-pet/runtime-config.json
+codex-adapter/plugins/bailong-pet/hooks/hooks.json

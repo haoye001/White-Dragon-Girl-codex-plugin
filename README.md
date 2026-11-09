@@ -1,1 +1,41 @@
-# GPT-
+# GPT 白龙桌宠合集
+
+适用于 Windows 上的 Codex 桌面版。本仓库在同一个本地插件市场中提供两套独立桌宠，共用 Python 环境和 Codex 启动监控。
+
+| 插件 | 功能 |
+| --- | --- |
+| 白龙娘 `bailong-pet` | 透明 WebP 动画、拖拽、对话气泡、可选工作状态和 Codex 额度展示 |
+| DSH 白龙 `dsh-dragon` | MP4 绿幕播放、点击和拖拽互动、`dragon_control` 接口 |
+
+## 准备素材
+
+仓库提供代码、素材清单和许可说明。角色动画、预渲染帧和预览图保留在本机。请使用自己有权使用的素材。
+
+- **白龙娘**：将 BailongPet 0.4.1 的 `outputs/白龙桌宠素材` 内容按原目录结构复制到 `codex-adapter/plugins/bailong-pet/assets/animations`。首次播放会在本机生成帧缓存。
+- **DSH 白龙**：准备 MP4 素材目录，至少包含 `待机呼吸休闲.mp4`。安装时用 `-VideoSource` 导入。以 `点击回应` 开头的视频用于点击互动，`被鼠标拖拽悬空反馈.mp4` 用于拖拽动作。
+
+## 安装
+
+需要 Windows、已安装的 Codex 桌面版，以及带 Tk 的 Python 3.11 或更高版本。在仓库根目录运行 PowerShell，并替换示例中的本地路径。
+
+```powershell
+cd codex-adapter
+.\install.ps1 -PythonPath 'D:\python\python.exe' -VideoSource 'D:\Desktop\素材库'
+```
+
+默认安装两个插件。只安装白龙娘时，可传入 `-Plugins bailong-pet` 并省略 `-VideoSource`。如果无法自动定位 Codex CLI，可用 `-CodexPath` 指定可执行文件的绝对路径。
+
+安装脚本会创建隔离 Python 环境、注册本地市场 `bailong-local`，并创建或更新当前用户的登录启动快捷方式。后台监控在检测到 Windows Store 版 Codex 打开时启动所选桌宠，在 Codex 完全退出时关闭桌宠。工作状态 hooks 可在 Codex 中审阅后启用。
+
+## 使用和开发
+
+- 在 Codex 新聊天中可请求启动桌宠、播放动作或显示气泡。白龙娘还支持通过桌宠菜单查询 Codex 额度。
+- [详细安装和自启动说明](codex-adapter/README.md)
+- [白龙娘使用手册](codex-adapter/BAILONG.md)
+- [白龙娘素材来源和许可](codex-adapter/plugins/bailong-pet/ASSETS.md)
+
+在 `codex-adapter` 目录完成环境配置、放好白龙娘素材后运行测试。
+
+```powershell
+.\.runtime\Scripts\python.exe -m unittest discover -s tests -v
+```

@@ -1,0 +1,13 @@
+{
+  "name": "bailong-pet",
+  "version": "1.1.0",
+  "description": "白龙娘桌宠：在当前 Codex 聊天中控制动画、气泡和真实额度展示。",
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "hooks": "./hooks/hooks.json",
+  "requires_local_executor": true,
+  "interface": {
+    "displayName": "白龙娘 · Codex 桌面伙伴",
+    "shortDescription": "25 段白龙娘动画，支持气泡、拖拽、工作状态和额度展示。"
+  }
+}

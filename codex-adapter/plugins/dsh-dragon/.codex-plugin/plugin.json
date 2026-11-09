@@ -1,0 +1,12 @@
+{
+  "name": "dsh-dragon",
+  "skills": "./skills/",
+  "requires_local_executor": true,
+  "version": "1.0.0",
+  "mcpServers": "./.mcp.json",
+  "description": "DSH 白龙 MP4 桌宠",
+  "interface": {
+    "shortDescription": "MP4 动画、点击和拖拽",
+    "displayName": "DSH 白龙 · Codex 素材版"
+  }
+}
