@@ -13,7 +13,7 @@
 .\install.ps1 -PythonPath 'D:\python\python.exe'
 ```
 
-默认在 `bailong-local` 下安装两个插件。可用 `-Plugins bailong-pet` 仅安装白龙娘，也可用 `-VideoSource 'D:\Desktop\素材库'` 导入额外的 DSH MP4。DSH 需要在本机提供待机视频，素材目录须包含 `待机呼吸休闲.mp4`。若已有同名市场指向旧目录，请在 Codex 插件管理中移除旧市场登记后重新运行安装。
+默认在 `bailong-local` 下安装两个插件。可用 `-Plugins bailong-pet` 仅安装白龙娘，也可用 `-VideoSource 'D:\Desktop\素材库'` 导入额外的 DSH MP4。仓库随附 DSH 待机视频。若已有同名市场指向旧目录，请在 Codex 插件管理中移除旧市场登记后重新运行安装。
 
 `setup.ps1` 仅创建共享环境和生成插件配置。统一安装入口更新 Windows 登录启动项中的 DSH Dragon Codex 快捷方式。一个后台监控负责启动所选桌宠。打开 Windows Store 版 Codex 时启动，Codex 完全退出时关闭。手动退出桌宠后，下次打开 Codex 才会再次自动启动。若旧版监控仍在运行，注销并重新登录 Windows 后切换到新版。白龙娘工作状态 hooks 由 Codex 的信任流程管理。
 
