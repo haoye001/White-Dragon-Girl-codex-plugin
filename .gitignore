@@ -9,3 +9,5 @@ codex-adapter/plugins/*/.mcp.json
 codex-adapter/plugins/bailong-pet/runtime-config.json
 codex-adapter/plugins/bailong-pet/hooks/hooks.json
 codex-adapter/plugins/dsh-dragon/hooks/hooks.json
+codex-adapter/plugins/dsh-dragon/runtime-config.json
+codex-adapter/plugins/dsh-dragon/runtime/codex_quota.py

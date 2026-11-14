@@ -17,6 +17,9 @@ if (-not [IO.Path]::IsPathRooted($CodexPath) -or -not (Test-Path -LiteralPath $C
     codex = $CodexPath
     dataDirectory = Join-Path $env:LOCALAPPDATA 'BailongCodexPlugin'
 } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $pluginRoot 'runtime-config.json') -Encoding utf8
+@{ codex = $CodexPath } | ConvertTo-Json |
+    Set-Content -LiteralPath (Join-Path $dragonRoot 'runtime-config.json') -Encoding utf8
+Copy-Item -LiteralPath (Join-Path $pluginRoot 'runtime/quota.py') -Destination (Join-Path $dragonRoot 'runtime/codex_quota.py') -Force
 if (-not (Test-Path -LiteralPath $runtimePython)) {
     if (-not $PythonPath) { throw 'Supply a trusted Python 3.11+ absolute path: -PythonPath D:\python\python.exe' }
     if (-not [IO.Path]::IsPathRooted($PythonPath) -or -not (Test-Path -LiteralPath $PythonPath -PathType Leaf)) {

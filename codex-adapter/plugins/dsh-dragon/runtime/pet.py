@@ -9,11 +9,13 @@ from time import monotonic, time
 
 import cv2
 import numpy as np
-from PySide6.QtCore import QAbstractNativeEventFilter, QEasingCurve, QPoint, QPropertyAnimation, QRect, Qt, QSettings, QTimer
+from PySide6.QtCore import QAbstractNativeEventFilter, QEasingCurve, QPoint, QPropertyAnimation, QRect, Qt, QSettings, QTimer, Signal
 from PySide6.QtGui import QColor, QIcon, QLinearGradient, QPainter, QPixmap, QPolygon
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWidgets import QApplication, QWidget, QMenu, QInputDialog, QMessageBox, QStyle, QSystemTrayIcon
 from media import ClipPool
+from dialogs import TodoDialog, edit_menu
+from widgets import DesktopWidgets
 
 ROOT = Path(__file__).resolve().parents[1]
 SOCKET = 'dsh-dragon-codex-v1'
@@ -66,12 +68,16 @@ def chroma(frame):
 
 
 class Pet(QWidget):
+    todos_changed = Signal()
+
     def __init__(self, owner=None, slot=0):
         super().__init__()
         self.owner = owner
         self.slot = slot
         self.children_pets = {}
         self.pool = owner.pool if owner else ClipPool(chroma)
+        if owner is None:
+            QApplication.instance().aboutToQuit.connect(self.pool.close)
         self.clip_key = None
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
@@ -113,6 +119,7 @@ class Pet(QWidget):
         self.bubble_timer.setSingleShot(True)
         self.bubble_timer.timeout.connect(self.clear_message)
         self.timer = QTimer(self)
+        self.timer.setTimerType(Qt.PreciseTimer)
         self.timer.timeout.connect(self.tick)
         try:
             self.switch_role(self.role)
@@ -136,6 +143,7 @@ class Pet(QWidget):
         self.todo_timer = QTimer(self)
         self.todo_timer.timeout.connect(self.check_todos)
         self.todo_timer.start(1000)
+        self.widgets = DesktopWidgets(self)
         self.hotkey = VisibilityHotkey(self)
         if self.settings.value('visibility_hotkey', False, type=bool):
             self.hotkey.enable()
@@ -185,31 +193,49 @@ class Pet(QWidget):
         pet.show()
 
     def edit_todos(self):
-        text, accepted = QInputDialog.getText(self, '待办提醒', '提醒事项（清空可取消）',
-                                             text=self.todos[0]['text'] if self.todos else '')
-        if not accepted:
-            return
-        if text.strip():
-            minutes, accepted = QInputDialog.getInt(self, '待办提醒', '多少分钟后提醒？', 5, 1, 10080)
-            if not accepted:
-                return
-            self.todos = [{'text': text.strip()[:100], 'due': time() + minutes * 60}]
-        else:
-            self.todos = []
+        dialog = TodoDialog(self)
+        self.todos_changed.connect(dialog.refresh)
+        try:
+            dialog.exec()
+        finally:
+            self.todos_changed.disconnect(dialog.refresh)
+            dialog.deleteLater()
+
+    def save_todos(self):
         self.settings.setValue('todos', json.dumps(self.todos, ensure_ascii=False))
+        self.todos_changed.emit()
 
     def check_todos(self):
-        if not self.todos or self.todos[0]['due'] > time():
+        now = time()
+        reminders = []
+        changed = False
+        for todo in self.todos:
+            if todo.get('archived'):
+                continue
+            remaining = todo['due'] - now
+            if remaining <= 0:
+                todo['archived'] = True
+                changed = True
+                if remaining >= -600:
+                    reminders.append(todo['text'])
+            elif remaining <= todo.get('lead', 0) * 60 and not todo.get('warned'):
+                todo['warned'] = True
+                changed = True
+                reminders.append('即将到期：' + todo['text'])
+        if changed:
+            self.save_todos()
+        if not reminders:
             return
-        text = self.todos.pop(0)['text']
-        self.settings.setValue('todos', json.dumps(self.todos, ensure_ascii=False))
+        self.notify('白龙待办提醒', '\n'.join(reminders))
+
+    def notify(self, title, text, duration=8000):
         if self.isVisible():
-            self.say(text)
+            self.say(text, duration)
         elif self.tray:
-            self.tray.showMessage('白龙待办提醒', text)
+            self.tray.showMessage(title, text, msecs=duration)
         else:
             self.show()
-            self.say(text)
+            self.say(text, duration)
 
     def play(self, name):
         if name not in self.actions:
@@ -222,7 +248,7 @@ class Pet(QWidget):
         self.update_frame_interval()
 
     def update_frame_interval(self):
-        self.timer.setInterval(max(1, round(1000 * self.cap.interval)))
+        self.timer.setInterval(8)
         if self.isVisible():
             self.timer.start()
 
@@ -241,6 +267,7 @@ class Pet(QWidget):
         passthrough = menu.addAction('鼠标穿透')
         passthrough.setCheckable(True)
         passthrough.toggled.connect(self.set_passthrough)
+        menu.addAction('查询 Codex 额度', self.widgets.request_quota)
         menu.addAction('退出桌宠', QApplication.quit)
         self.tray.setContextMenu(menu)
         self.tray.show()
@@ -289,8 +316,8 @@ class Pet(QWidget):
             event.accept()
 
     def tick(self):
-        frame = self.cap.read(loop=self.current == self.idle)
-        if frame is None:
+        frame = self.cap.read()
+        if self.cap.finished:
             self.release_clip()
             if self.current == self.idle:
                 self.timer.stop()
@@ -298,8 +325,9 @@ class Pet(QWidget):
                 return
             self.play(self.idle)
             return
-        self.pixmap = frame
-        self.update()
+        if frame is not None and frame is not self.pixmap:
+            self.pixmap = frame
+            self.update()
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -423,6 +451,7 @@ class Pet(QWidget):
             menu.addAction('关闭这只桌宠', self.close)
         else:
             menu.addAction('待办提醒', self.edit_todos)
+        host.widgets.add_actions(menu)
         animations = menu.addMenu('播放动作（全部素材）')
         for name in sorted(self.actions):
             action = animations.addAction(name)
@@ -455,20 +484,24 @@ class Pet(QWidget):
         copy.setEnabled(not self.pixmap.isNull())
         copy.triggered.connect(lambda: QApplication.clipboard().setPixmap(self.pixmap))
         configurable = {action.text(): action for action in menu.actions()}
+        labels = list(dict.fromkeys(self.settings.value('menu_order', [], type=list) + list(configurable)))
+        labels = [label for label in labels if label in configurable]
         hidden = set(self.settings.value('hidden_menu', [], type=list))
-        for label in hidden & configurable.keys():
-            configurable[label].setVisible(False)
-        menu.addAction('配置菜单', lambda: self.configure_menu(configurable))
+        for label in labels:
+            action = configurable[label]
+            menu.removeAction(action)
+            menu.addAction(action)
+            action.setVisible(label not in hidden)
+        menu.addAction('配置菜单', lambda: self.configure_menu(labels, hidden))
         menu.addAction('退出桌宠', QApplication.quit)
         menu.exec(event.globalPos())
 
-    def configure_menu(self, actions):
-        text, accepted = QInputDialog.getMultiLineText(
-            self, '配置菜单', '每行填写一个要隐藏的菜单项名称。\n可选：' + '、'.join(actions),
-            '\n'.join(self.settings.value('hidden_menu', [], type=list)))
-        if accepted:
-            self.settings.setValue('hidden_menu', [line.strip() for line in text.splitlines()
-                                                   if line.strip() in actions])
+    def configure_menu(self, labels, hidden):
+        result = edit_menu(self, labels, hidden)
+        if result is not None:
+            order, hidden = result
+            self.settings.setValue('menu_order', order)
+            self.settings.setValue('hidden_menu', hidden)
 
     def set_auto(self, enabled):
         self.auto_enabled = enabled
@@ -508,14 +541,14 @@ class Pet(QWidget):
             self.auto.setInterval(value * 1000)
 
     def interact(self):
-        if self.current == self.idle and self.offset is None:
+        if self.current == self.idle and self.offset is None and self.cap is not None:
             self.play(random.choice(list(self.actions)))
             if not self.message and self.settings.value('self_talk', False, type=bool):
                 self.say(random.choice(['休息一下吧。', '我在这里陪着你。', '今天也一起加油。']))
 
-    def say(self, message):
+    def say(self, message, duration=8000):
         self.message = message[:100]
-        self.bubble_timer.start(8000)
+        self.bubble_timer.start(duration)
         self.update()
 
     def accept(self):

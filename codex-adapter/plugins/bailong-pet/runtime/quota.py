@@ -8,7 +8,14 @@ import threading
 import time
 from datetime import datetime
 
-from core import ROOT, VERSION, read_json
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def read_json(path, default):
+    try:
+        return json.loads(path.read_text(encoding='utf-8-sig'))
+    except (OSError, ValueError):
+        return default
 
 
 def normalize(result):
@@ -48,7 +55,7 @@ def format_usage(usage):
 
 def fetch(timeout=25, cancel=None):
     config = read_json(ROOT/'runtime-config.json', {})
-    executable = Path(config.get('codex', ''))
+    executable = Path(config.get('codex', '') if isinstance(config, dict) else '')
     # Never search PATH or the task directory for an executable.
     if not executable.is_absolute() or not executable.is_file() or executable.name.lower() != 'codex.exe':
         raise RuntimeError('未配置有效的 Codex 路径，请重新运行安装脚本。')
@@ -96,7 +103,7 @@ def fetch(timeout=25, cancel=None):
 
     try:
         send({'id': 1, 'method': 'initialize', 'params': {'clientInfo': {
-            'name': 'bailong_pet_quota', 'title': '白龙桌宠只读额度查询', 'version': VERSION}}})
+            'name': 'bailong_pet_quota', 'title': '白龙桌宠只读额度查询', 'version': '1.1.0'}}})
         response(1)
         send({'method': 'initialized', 'params': {}})
         send({'id': 2, 'method': 'account/rateLimits/read'})

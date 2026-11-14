@@ -7,6 +7,8 @@ New-Item -ItemType Directory -Force $target | Out-Null
 Copy-Item -Path "$stage\*" -Destination $target -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot '.runtime') -Destination $target -Recurse -Force
 $plugin = Join-Path $target 'plugins\dsh-dragon'
+@{ codex = $codex } | ConvertTo-Json | Set-Content -Encoding utf8 "$plugin\runtime-config.json"
+Copy-Item -LiteralPath "$target\plugins\bailong-pet\runtime\quota.py" -Destination "$plugin\runtime\codex_quota.py" -Force
 Copy-Item -Path 'D:\Desktop\素材库\*.mp4' -Destination "$plugin\assets\videos" -Force
 $python = Join-Path $target '.runtime\Scripts\python.exe'
 $pythonw = Join-Path $target '.runtime\Scripts\pythonw.exe'
