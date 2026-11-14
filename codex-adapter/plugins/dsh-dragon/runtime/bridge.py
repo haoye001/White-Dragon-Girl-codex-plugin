@@ -1,5 +1,6 @@
 """Minimal line-delimited MCP transport. Never reads Codex credentials or chat logs."""
 import json
+from hashlib import sha256
 from pathlib import Path
 import subprocess
 import sys
@@ -34,9 +35,15 @@ def hook():
                 'PermissionRequest': 'attention', 'Stop': 'idle',
                 'Interrupt': 'idle', 'SessionEnd': 'idle'}
     try:
-        event = json.loads(sys.stdin.read(262144)).get('hook_event_name')
+        payload = json.loads(sys.stdin.read(262144))
+        event = payload.get('hook_event_name')
         if event in statuses:
-            request({'command': 'activity', 'activity': statuses[event]})
+            data = {'command': 'activity', 'activity': statuses[event]}
+            for field in ('session_id', 'turn_id'):
+                identifier = payload.get(field)
+                if isinstance(identifier, str) and identifier:
+                    data[field] = sha256(identifier.encode('utf-8')).hexdigest()
+            request(data)
     except (ValueError, AttributeError, OSError):
         pass
 
@@ -69,6 +76,8 @@ def dispatch(message):
                 'inputSchema': {'type': 'object', 'properties': {
                     'command': {'type': 'string', 'enum': ['start', 'stop', 'show', 'hide', 'state', 'play', 'say', 'activity']},
                     'activity': {'type': 'string', 'enum': ['thinking', 'working', 'attention', 'idle']},
+                    'session_id': {'type': 'string', 'maxLength': 128},
+                    'turn_id': {'type': 'string', 'maxLength': 128},
                     'animation': {'type': 'string'}, 'text': {'type': 'string', 'maxLength': 100}},
                     'required': ['command'], 'additionalProperties': False}}]}
     if method == 'tools/call':

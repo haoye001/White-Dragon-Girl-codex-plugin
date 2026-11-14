@@ -81,7 +81,7 @@ foreach ($eventName in @('UserPromptSubmit','PreToolUse','PermissionRequest','St
 }
 $dragonHooksDir = Join-Path $dragonRoot 'hooks'
 New-Item -ItemType Directory -Path $dragonHooksDir -Force | Out-Null
-@{ description = 'Forward only the Codex event name to the running DSH pet.'; hooks = $dragonHooks } |
+@{ description = 'Forward Codex activity and hashed session and turn IDs to the running DSH pet.'; hooks = $dragonHooks } |
     ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $dragonHooksDir 'hooks.json') -Encoding utf8
 @{ description = 'Only update an already-running companion. No prompts, commands or outputs are saved. No approval decisions.'; hooks = $hookMap } |
     ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $pluginRoot 'hooks/hooks.json') -Encoding utf8

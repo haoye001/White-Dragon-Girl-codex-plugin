@@ -3,10 +3,28 @@ from datetime import datetime
 from time import time
 
 from PySide6.QtCore import QDateTime, Qt
+from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import (
-    QDateTimeEdit, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLineEdit,
-    QListWidget, QListWidgetItem, QLabel, QPushButton, QSpinBox, QVBoxLayout,
+    QCheckBox, QDateTimeEdit, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QKeySequenceEdit, QLineEdit,
+    QListWidget, QListWidgetItem, QLabel, QPushButton, QSpinBox, QVBoxLayout, QWidget,
 )
+
+
+def edit_hotkey(parent, sequence):
+    dialog = QDialog(parent)
+    dialog.setWindowTitle('设置全局显隐快捷键')
+    layout = QVBoxLayout(dialog)
+    layout.addWidget(QLabel('请按住 Ctrl、Alt、Shift 或 Win，再按一个字母或数字。'))
+    edit = QKeySequenceEdit(sequence)
+    edit.setMaximumSequenceLength(1)
+    layout.addWidget(edit)
+    buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+    buttons.accepted.connect(dialog.accept)
+    buttons.rejected.connect(dialog.reject)
+    layout.addWidget(buttons)
+    if dialog.exec():
+        return edit.keySequence().toString(QKeySequence.PortableText)
+    return None
 
 
 def button_row(layout, buttons):
@@ -18,18 +36,57 @@ def button_row(layout, buttons):
     layout.addLayout(row)
 
 
-def edit_menu(parent, labels, hidden):
+def edit_menu(parent, labels, hidden, groups=None):
     dialog = QDialog(parent)
     dialog.setWindowTitle('配置菜单')
     dialog.resize(380, 480)
     layout = QVBoxLayout(dialog)
-    layout.addWidget(QLabel('勾选要显示的条目，拖动调整顺序。'))
+    layout.addWidget(QLabel('勾选要显示的条目，拖动调整顺序。选中条目后可设置子菜单。'))
     items = QListWidget()
     items.setDragDropMode(QListWidget.DragDropMode.InternalMove)
     layout.addWidget(items)
     for label in labels:
         item = QListWidgetItem(label, items)
         item.setCheckState(Qt.Unchecked if label in hidden else Qt.Checked)
+        item.setData(Qt.UserRole, (groups or {}).get(label, ''))
+
+    group = QLineEdit()
+    group.setMaxLength(30)
+    group.setPlaceholderText('子菜单名称，留空放在顶层')
+    layout.addWidget(group)
+    items.currentItemChanged.connect(lambda current, _: group.setText(current.data(Qt.UserRole) if current else ''))
+
+    def set_group(text):
+        item = items.currentItem()
+        if item:
+            item.setData(Qt.UserRole, text.strip())
+
+    group.textEdited.connect(set_group)
+    items.setCurrentRow(0)
+    preview = QLabel()
+    preview.setWordWrap(True)
+    preview.setTextFormat(Qt.PlainText)
+
+    def update_preview():
+        visible = {}
+        for index in range(items.count()):
+            item = items.item(index)
+            if item.checkState() == Qt.Checked:
+                name = item.data(Qt.UserRole)
+                if name:
+                    visible.setdefault(('group', name), []).append(item.text())
+                else:
+                    visible[('item', item.text())] = []
+        labels = [f'{name}（{"、".join(children)}）' if children else name
+                  for (_, name), children in visible.items()]
+        preview.setText('菜单顺序：' + (' → '.join(labels) or '无自定义条目'))
+
+    items.itemChanged.connect(update_preview)
+    items.model().rowsMoved.connect(update_preview)
+    items.model().rowsInserted.connect(update_preview)
+    items.model().rowsRemoved.connect(update_preview)
+    update_preview()
+    layout.addWidget(preview)
     buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
     buttons.accepted.connect(dialog.accept)
     buttons.rejected.connect(dialog.reject)
@@ -37,7 +94,47 @@ def edit_menu(parent, labels, hidden):
     if not dialog.exec():
         return None
     order = [items.item(index) for index in range(items.count())]
-    return [item.text() for item in order], [item.text() for item in order if item.checkState() == Qt.Unchecked]
+    return ([item.text() for item in order],
+            [item.text() for item in order if item.checkState() == Qt.Unchecked],
+            {item.text(): item.data(Qt.UserRole) for item in order if item.data(Qt.UserRole)})
+
+
+def edit_settings(pet):
+    dialog = QDialog(pet)
+    dialog.setWindowTitle('桌宠设置')
+    form = QFormLayout(dialog)
+    numbers = {}
+    for key, label, current, minimum, maximum in (
+        ('opacity', '不透明度（%）', pet.opacity, 20, 100),
+        ('speed', '播放速率（%）', pet.speed, 25, 300),
+        ('interval', '自动互动间隔（秒）', pet.interval, 5, 3600),
+        ('bubble_font', '气泡字号（像素）', pet.bubble_font, 10, 24),
+    ):
+        field = QSpinBox()
+        field.setRange(minimum, maximum)
+        field.setValue(current)
+        form.addRow(label, field)
+        numbers[key] = field
+    switches = {}
+    for key, label, checked in (
+        ('auto', '自动互动', pet.auto_enabled),
+        ('locked', '锁定位置', pet.locked),
+        ('click_sound', '点击音效', pet.settings.value('click_sound', False, type=bool)),
+        ('self_talk', '随机自言自语', pet.settings.value('self_talk', False, type=bool)),
+        ('edge_probe', '边缘探头', pet.settings.value('edge_probe', False, type=bool)),
+    ):
+        field = QCheckBox()
+        field.setChecked(checked)
+        form.addRow(label, field)
+        switches[key] = field
+    buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+    buttons.accepted.connect(dialog.accept)
+    buttons.rejected.connect(dialog.reject)
+    form.addRow(buttons)
+    if not dialog.exec():
+        return None
+    return ({key: field.value() for key, field in numbers.items()},
+            {key: field.isChecked() for key, field in switches.items()})
 
 
 class TodoDialog(QDialog):

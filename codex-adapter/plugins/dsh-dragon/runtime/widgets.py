@@ -8,6 +8,7 @@ import threading
 
 from PySide6.QtCore import QObject, QProcess, QTimer
 from PySide6.QtWidgets import QApplication, QFileDialog, QInputDialog
+from weather import CityNotFound, current_weather
 
 try:
     from lunar_python import Solar
@@ -60,6 +61,10 @@ class DesktopWidgets(QObject):
         self.calendar_timer = QTimer(self)
         self.calendar_timer.timeout.connect(self.check_calendar)
         self.calendar_timer.start(15_000)
+        self.weather_result = queue.Queue()
+        self.weather_poll = QTimer(self)
+        self.weather_poll.setInterval(100)
+        self.weather_poll.timeout.connect(self.accept_weather)
         QApplication.instance().aboutToQuit.connect(self.closed.set)
 
     def add_actions(self, menu):
@@ -68,6 +73,7 @@ class DesktopWidgets(QObject):
         tools.addAction('每日一签', self.draw_fortune)
         tools.addAction('今日节日与节气', self.show_festivals)
         tools.addAction('设置生日提醒', self.set_birthday)
+        tools.addAction('查看天气…', self.request_weather)
         for key, label in [('festival_reminders', '节日与节气提醒'), ('hourly_chime', '整点报时')]:
             action = tools.addAction(label)
             action.setCheckable(True)
@@ -171,3 +177,37 @@ class DesktopWidgets(QObject):
             return
         self.quota_poll.stop()
         self.pet.notify('Codex 额度', result, duration=25_000)
+
+    def request_weather(self):
+        if self.weather_poll.isActive():
+            self.pet.notify('白龙天气', '正在查询天气…')
+            return
+        city, accepted = QInputDialog.getText(self.pet, '查看天气', '输入城市名称',
+                                             text=self.settings.value('weather_city', '成都'))
+        city = city.strip()[:80]
+        if not accepted or not city:
+            return
+        self.settings.setValue('weather_city', city)
+        self.pet.notify('白龙天气', '正在查询天气…')
+        self.weather_poll.start()
+
+        def worker():
+            try:
+                text = current_weather(city)
+            except CityNotFound as error:
+                text = str(error)
+            except OSError:
+                text = '暂时连不上天气服务，已尝试重连。请稍后再试。'
+            except (ValueError, KeyError, TypeError, AttributeError, IndexError):
+                text = '天气服务返回了无法读取的数据，请稍后再试。'
+            self.weather_result.put(text)
+
+        threading.Thread(target=worker, daemon=True, name='DSH weather').start()
+
+    def accept_weather(self):
+        try:
+            result = self.weather_result.get_nowait()
+        except queue.Empty:
+            return
+        self.weather_poll.stop()
+        self.pet.notify('白龙天气', result, duration=15_000)
