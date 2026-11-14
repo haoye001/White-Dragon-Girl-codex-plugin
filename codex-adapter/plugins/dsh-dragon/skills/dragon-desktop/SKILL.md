@@ -7,3 +7,4 @@ description: 控制 DSH 改造的白龙素材桌宠，启动、关闭、播放�
 start 启动；stop 退出；show/hide 显隐；say 展示不超过100字的气泡。
 仅在用户要求桌宠参与时向气泡传递聊天内容。不读取凭据、不创建额外模型会话。
 随 Codex 启动由本机 monitor.py 负责，不修改或自动信任 Codex hooks。
+使用 dragon_control 的 activity 命令可同步 Codex 工作状态，activity 参数为 thinking、working、attention 或 idle。仅在用户要求联动时调用，状态与当前任务实际进度一致。

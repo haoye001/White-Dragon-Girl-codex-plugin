@@ -1,19 +1,58 @@
 """Codex desktop adapter: local video playback, chroma removal and loopback IPC."""
 import json
+import ctypes
+from ctypes import wintypes
 from pathlib import Path
 import random
 import sys
-from time import monotonic
+from time import monotonic, time
 
 import cv2
 import numpy as np
-from PySide6.QtCore import QEasingCurve, QPoint, QPropertyAnimation, QRect, Qt, QSettings, QTimer
-from PySide6.QtGui import QColor, QIcon, QImage, QLinearGradient, QPainter, QPixmap, QPolygon
+from PySide6.QtCore import QAbstractNativeEventFilter, QEasingCurve, QPoint, QPropertyAnimation, QRect, Qt, QSettings, QTimer
+from PySide6.QtGui import QColor, QIcon, QLinearGradient, QPainter, QPixmap, QPolygon
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
-from PySide6.QtWidgets import QApplication, QWidget, QMenu, QInputDialog, QStyle, QSystemTrayIcon
+from PySide6.QtWidgets import QApplication, QWidget, QMenu, QInputDialog, QMessageBox, QStyle, QSystemTrayIcon
+from media import ClipPool
 
 ROOT = Path(__file__).resolve().parents[1]
 SOCKET = 'dsh-dragon-codex-v1'
+
+
+class VisibilityHotkey(QAbstractNativeEventFilter):
+    """Register Ctrl+Alt+P on the GUI thread, independent of the pet window."""
+    def __init__(self, pet):
+        super().__init__()
+        self.pet = pet
+        self.registered = False
+        self.user32 = ctypes.WinDLL('user32') if sys.platform == 'win32' else None
+
+    def enable(self):
+        if self.registered:
+            return True
+        if not self.user32 or not self.user32.RegisterHotKey(None, 1, 0x4003, ord('P')):
+            return False
+        app = QApplication.instance()
+        app.installNativeEventFilter(self)
+        app.aboutToQuit.connect(self.disable)
+        self.registered = True
+        return True
+
+    def disable(self):
+        if self.registered:
+            self.user32.UnregisterHotKey(None, 1)
+            app = QApplication.instance()
+            app.removeNativeEventFilter(self)
+            app.aboutToQuit.disconnect(self.disable)
+            self.registered = False
+
+    def nativeEventFilter(self, event_type, message):
+        if event_type == b'windows_dispatcher_MSG':
+            event = wintypes.MSG.from_address(int(message))
+            if event.message == 0x0312 and event.wParam == 1:
+                self.pet.setVisible(not self.pet.isVisible())
+                return True, 0
+        return False, 0
 
 
 def chroma(frame):
@@ -27,13 +66,19 @@ def chroma(frame):
 
 
 class Pet(QWidget):
-    def __init__(self):
+    def __init__(self, owner=None, slot=0):
         super().__init__()
+        self.owner = owner
+        self.slot = slot
+        self.children_pets = {}
+        self.pool = owner.pool if owner else ClipPool(chroma)
+        self.clip_key = None
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAcceptDrops(True)
         self.resize(480, 320)
-        self.settings = QSettings('DSH Dragon', 'Codex Material Pet')
+        profile = 'Codex Material Pet' if not slot else f'Codex Material Pet {slot}'
+        self.settings = QSettings('DSH Dragon', profile)
         self.locked = self.settings.value('locked', False, type=bool)
         self.speed = self.settings.value('speed', 100, type=int)
         self.interval = self.settings.value('interval', 45, type=int)
@@ -43,8 +88,11 @@ class Pet(QWidget):
         position = self.settings.value('position', default, type=QPoint)
         self.move(position if any(screen.availableGeometry().contains(position + self.rect().center())
                                   for screen in QApplication.screens()) else default)
-        self.actions = {p.stem: p for p in (ROOT / 'assets' / 'videos').glob('*.mp4')}
-        self.idle = '待机呼吸休闲'
+        self.roles = {'默认白龙': ROOT / 'assets' / 'videos'}
+        self.roles.update({path.name: path for path in (ROOT / 'assets' / 'characters').glob('*')
+                           if path.is_dir() and path.name not in self.roles})
+        self.role = self.settings.value('role', '默认白龙')
+        self.actions = {}
         self.current = ''
         self.cap = None
         self.pixmap = QPixmap()
@@ -66,11 +114,31 @@ class Pet(QWidget):
         self.bubble_timer.timeout.connect(self.clear_message)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.tick)
-        self.play(self.idle)
+        try:
+            self.switch_role(self.role)
+        except (ValueError, RuntimeError):
+            self.switch_role('默认白龙')
         self.auto = QTimer(self)
         self.auto.timeout.connect(self.interact)
         self.auto.setInterval(self.interval * 1000)
         self.set_auto(self.settings.value('auto', True, type=bool))
+        if owner:
+            self.setAttribute(Qt.WA_DeleteOnClose)
+            self.tray = None
+            self.hotkey = owner.hotkey
+            return
+        try:
+            self.todos = json.loads(self.settings.value('todos', '[]'))
+            if not isinstance(self.todos, list):
+                self.todos = []
+        except (TypeError, ValueError):
+            self.todos = []
+        self.todo_timer = QTimer(self)
+        self.todo_timer.timeout.connect(self.check_todos)
+        self.todo_timer.start(1000)
+        self.hotkey = VisibilityHotkey(self)
+        if self.settings.value('visibility_hotkey', False, type=bool):
+            self.hotkey.enable()
         self.create_tray()
         self.server = QLocalServer(self)
         self.server.newConnection.connect(self.accept)
@@ -78,22 +146,83 @@ class Pet(QWidget):
             raise RuntimeError('Another pet is already running')
         self.connections = set()
 
+    def switch_role(self, role):
+        if role not in self.roles:
+            raise ValueError('未知角色')
+        actions = {path.stem: path for path in sorted(self.roles[role].rglob('*'))
+                   if path.is_file() and path.suffix.lower() in {'.mp4', '.webm'}}
+        idle = next((name for name in ('待机呼吸休闲', 'idle') if name in actions), None)
+        if idle is None:
+            idle = next((name for name, path in actions.items() if path.parent.name == 'idle'), None)
+        if idle is None:
+            raise ValueError('角色缺少 idle.webm 或待机呼吸休闲.mp4')
+        previous = self.actions, getattr(self, 'idle', None)
+        self.actions, self.idle = actions, idle
+        try:
+            self.play(idle)
+        except (ValueError, RuntimeError):
+            self.actions, self.idle = previous
+            raise
+        self.role = role
+        self.settings.setValue('role', role)
+
+    def select_role(self, role):
+        try:
+            self.switch_role(role)
+        except (ValueError, RuntimeError) as error:
+            QMessageBox.warning(self, '无法切换角色', str(error))
+
+    def spawn_pet(self):
+        slot = next((n for n in range(1, 8) if n not in self.children_pets), None)
+        if slot is None:
+            return
+        pet = Pet(self, slot)
+        if not pet.settings.contains('position'):
+            area = (QApplication.screenAt(self.geometry().center()) or QApplication.primaryScreen()).availableGeometry()
+            pet.move(max(area.left(), self.x() - 72 * slot), max(area.top(), self.y() - 48 * slot))
+        self.children_pets[slot] = pet
+        pet.destroyed.connect(lambda: self.children_pets.pop(slot, None))
+        pet.show()
+
+    def edit_todos(self):
+        text, accepted = QInputDialog.getText(self, '待办提醒', '提醒事项（清空可取消）',
+                                             text=self.todos[0]['text'] if self.todos else '')
+        if not accepted:
+            return
+        if text.strip():
+            minutes, accepted = QInputDialog.getInt(self, '待办提醒', '多少分钟后提醒？', 5, 1, 10080)
+            if not accepted:
+                return
+            self.todos = [{'text': text.strip()[:100], 'due': time() + minutes * 60}]
+        else:
+            self.todos = []
+        self.settings.setValue('todos', json.dumps(self.todos, ensure_ascii=False))
+
+    def check_todos(self):
+        if not self.todos or self.todos[0]['due'] > time():
+            return
+        text = self.todos.pop(0)['text']
+        self.settings.setValue('todos', json.dumps(self.todos, ensure_ascii=False))
+        if self.isVisible():
+            self.say(text)
+        elif self.tray:
+            self.tray.showMessage('白龙待办提醒', text)
+        else:
+            self.show()
+            self.say(text)
+
     def play(self, name):
         if name not in self.actions:
             raise ValueError('Unknown animation: ' + name)
-        capture = cv2.VideoCapture(str(self.actions[name]))
-        if not capture.isOpened():
-            capture.release()
-            raise RuntimeError('Cannot open video: ' + name)
-        if self.cap:
-            self.cap.release()
-        self.cap = capture
+        key = (self.actions[name], self.speed, None if name == self.idle else object())
+        capture = self.pool.acquire(key)
+        self.release_clip()
+        self.clip_key, self.cap = key, capture
         self.current = name
         self.update_frame_interval()
 
     def update_frame_interval(self):
-        fps = max(1, self.cap.get(cv2.CAP_PROP_FPS))
-        self.timer.setInterval(max(1, round(100000 / (fps * self.speed))))
+        self.timer.setInterval(max(1, round(1000 * self.cap.interval)))
         if self.isVisible():
             self.timer.start()
 
@@ -124,17 +253,29 @@ class Pet(QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
+        if self.cap is None:
+            try:
+                self.play(self.current)
+            except RuntimeError as error:
+                self.say(str(error))
+                return
         self.timer.start()
         if self.auto_enabled:
             self.auto.start()
 
     def hideEvent(self, event):
         self.timer.stop()
+        self.release_clip()
         self.auto.stop()
         self.glide.stop()
         self.spin_timer.stop()
         self.angle = 0
         super().hideEvent(event)
+
+    def release_clip(self):
+        if self.clip_key is not None:
+            self.pool.release(self.clip_key)
+            self.clip_key = self.cap = None
 
     def dragEnterEvent(self, event):
         if '吃Token' in self.actions and any(url.isLocalFile() for url in event.mimeData().urls()):
@@ -148,12 +289,16 @@ class Pet(QWidget):
             event.accept()
 
     def tick(self):
-        ok, frame = self.cap.read()
-        if not ok:
+        frame = self.cap.read(loop=self.current == self.idle)
+        if frame is None:
+            self.release_clip()
+            if self.current == self.idle:
+                self.timer.stop()
+                self.say('待机动画无法解码，请切换角色或检查素材。')
+                return
             self.play(self.idle)
             return
-        rgba = chroma(frame)
-        self.pixmap = QPixmap.fromImage(QImage(rgba.data, 640, 360, 2560, QImage.Format_RGBA8888).copy())
+        self.pixmap = frame
         self.update()
 
     def paintEvent(self, event):
@@ -269,6 +414,15 @@ class Pet(QWidget):
 
     def contextMenuEvent(self, event):
         menu = QMenu(self)
+        host = self.owner or self
+        roles = menu.addMenu('切换角色')
+        for role in self.roles:
+            roles.addAction(role, lambda name=role: self.select_role(name))
+        menu.addAction('新增桌宠', host.spawn_pet)
+        if self.owner:
+            menu.addAction('关闭这只桌宠', self.close)
+        else:
+            menu.addAction('待办提醒', self.edit_todos)
         animations = menu.addMenu('播放动作（全部素材）')
         for name in sorted(self.actions):
             action = animations.addAction(name)
@@ -288,6 +442,11 @@ class Pet(QWidget):
         lock.setChecked(self.locked)
         lock.triggered.connect(self.set_locked)
         menu.addAction('黄金回旋', self.spin)
+        shortcut = menu.addAction('全局显隐快捷键（Ctrl+Alt+P）')
+        shortcut.setCheckable(True)
+        shortcut.setChecked(self.hotkey.registered)
+        shortcut.setEnabled(self.hotkey.user32 is not None)
+        shortcut.toggled.connect(host.set_visibility_hotkey)
         adjustments = menu.addMenu('显示与播放')
         adjustments.addAction('不透明度', lambda: self.adjust('opacity', '不透明度（%）', 20, 100))
         adjustments.addAction('播放速率', lambda: self.adjust('speed', '播放速率（%）', 25, 300))
@@ -295,8 +454,21 @@ class Pet(QWidget):
         copy = menu.addAction('复制当前画面')
         copy.setEnabled(not self.pixmap.isNull())
         copy.triggered.connect(lambda: QApplication.clipboard().setPixmap(self.pixmap))
+        configurable = {action.text(): action for action in menu.actions()}
+        hidden = set(self.settings.value('hidden_menu', [], type=list))
+        for label in hidden & configurable.keys():
+            configurable[label].setVisible(False)
+        menu.addAction('配置菜单', lambda: self.configure_menu(configurable))
         menu.addAction('退出桌宠', QApplication.quit)
         menu.exec(event.globalPos())
+
+    def configure_menu(self, actions):
+        text, accepted = QInputDialog.getMultiLineText(
+            self, '配置菜单', '每行填写一个要隐藏的菜单项名称。\n可选：' + '、'.join(actions),
+            '\n'.join(self.settings.value('hidden_menu', [], type=list)))
+        if accepted:
+            self.settings.setValue('hidden_menu', [line.strip() for line in text.splitlines()
+                                                   if line.strip() in actions])
 
     def set_auto(self, enabled):
         self.auto_enabled = enabled
@@ -305,6 +477,14 @@ class Pet(QWidget):
         else:
             self.auto.stop()
         self.settings.setValue('auto', enabled)
+
+    def set_visibility_hotkey(self, enabled):
+        if enabled and not self.hotkey.enable():
+            QMessageBox.warning(self, '快捷键注册失败', 'Ctrl+Alt+P 可能已被其他应用占用。')
+            return
+        if not enabled:
+            self.hotkey.disable()
+        self.settings.setValue('visibility_hotkey', enabled)
 
     def set_locked(self, enabled):
         self.locked = enabled
@@ -322,7 +502,7 @@ class Pet(QWidget):
             self.update()
         elif key == 'speed':
             self.speed = value
-            self.update_frame_interval()
+            self.play(self.current)
         else:
             self.interval = value
             self.auto.setInterval(value * 1000)
@@ -355,6 +535,18 @@ class Pet(QWidget):
                 self.play(data['animation'])
             elif command == 'say':
                 self.say(str(data.get('text', '')))
+            elif command == 'activity':
+                status = data.get('activity')
+                messages = {'thinking': '正在思考', 'working': '正在处理任务', 'attention': '有事项需要确认'}
+                if status == 'idle':
+                    self.play(self.idle)
+                    self.clear_message()
+                elif status in messages:
+                    if status == 'working' and '写代码' in self.actions:
+                        self.play('写代码')
+                    self.say(messages[status])
+                else:
+                    raise ValueError('Unknown activity')
             elif command == 'hide':
                 self.hide()
             elif command == 'show':

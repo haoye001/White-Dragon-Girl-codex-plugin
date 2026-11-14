@@ -60,13 +60,26 @@ if ($VideoSource) {
     }
 }
 $hookMap = @{}
+$dragonHooks = @{}
 foreach ($eventName in @('UserPromptSubmit','PreToolUse','PermissionRequest','Stop','Interrupt','SessionEnd')) {
+    $eventTimeout = if ($eventName -in @('Interrupt','SessionEnd')) { 3 } else { 4 }
+    $dragonHooks[$eventName] = @(@{ hooks = @(@{
+        type = 'command'
+        command = ('"' + $runtimePython + '" "${PLUGIN_ROOT}/runtime/bridge.py" hook')
+        commandWindows = ('& "' + $runtimePython + '" "${PLUGIN_ROOT}/runtime/bridge.py" hook')
+        timeout = $eventTimeout
+    }) })
     $hookMap[$eventName] = @(@{ hooks = @(@{
         type = 'command'
         command = ('"' + $runtimePython + '" "${PLUGIN_ROOT}/runtime/bridge.py" hook')
-        timeout = 4
+        commandWindows = ('& "' + $runtimePython + '" "${PLUGIN_ROOT}/runtime/bridge.py" hook')
+        timeout = $eventTimeout
     }) })
 }
+$dragonHooksDir = Join-Path $dragonRoot 'hooks'
+New-Item -ItemType Directory -Path $dragonHooksDir -Force | Out-Null
+@{ description = 'Forward only the Codex event name to the running DSH pet.'; hooks = $dragonHooks } |
+    ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $dragonHooksDir 'hooks.json') -Encoding utf8
 @{ description = 'Only update an already-running companion. No prompts, commands or outputs are saved. No approval decisions.'; hooks = $hookMap } |
     ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $pluginRoot 'hooks/hooks.json') -Encoding utf8
 Write-Output "Ready: $pluginRoot"

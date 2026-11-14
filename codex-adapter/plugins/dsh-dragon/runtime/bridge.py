@@ -29,6 +29,18 @@ def request(data):
     return json.loads(bytes(socket.readLine()).decode())
 
 
+def hook():
+    statuses = {'UserPromptSubmit': 'thinking', 'PreToolUse': 'working',
+                'PermissionRequest': 'attention', 'Stop': 'idle',
+                'Interrupt': 'idle', 'SessionEnd': 'idle'}
+    try:
+        event = json.loads(sys.stdin.read(262144)).get('hook_event_name')
+        if event in statuses:
+            request({'command': 'activity', 'activity': statuses[event]})
+    except (ValueError, AttributeError, OSError):
+        pass
+
+
 def control(args):
     if args.get('command') == 'start':
         if not request({'command': 'state'}).get('running'):
@@ -55,7 +67,8 @@ def dispatch(message):
     if method == 'tools/list':
         return {'tools': [{'name': 'dragon_control', 'description': 'Control the supplied dragon desktop pet; state returns all animation names.',
                 'inputSchema': {'type': 'object', 'properties': {
-                    'command': {'type': 'string', 'enum': ['start', 'stop', 'show', 'hide', 'state', 'play', 'say']},
+                    'command': {'type': 'string', 'enum': ['start', 'stop', 'show', 'hide', 'state', 'play', 'say', 'activity']},
+                    'activity': {'type': 'string', 'enum': ['thinking', 'working', 'attention', 'idle']},
                     'animation': {'type': 'string'}, 'text': {'type': 'string', 'maxLength': 100}},
                     'required': ['command'], 'additionalProperties': False}}]}
     if method == 'tools/call':
@@ -68,10 +81,13 @@ def dispatch(message):
 
 
 if __name__ == '__main__':
-    if len(sys.argv) > 1:
+    if sys.argv[1:] == ['hook']:
+        hook()
+    elif len(sys.argv) > 1:
         args = {'command': sys.argv[1]}
         if len(sys.argv) > 2:
-            args['animation' if sys.argv[1] == 'play' else 'text'] = sys.argv[2]
+            field = {'play': 'animation', 'activity': 'activity'}.get(sys.argv[1], 'text')
+            args[field] = sys.argv[2]
         print(json.dumps(control(args), ensure_ascii=False))
     else:
         for line in sys.stdin:

@@ -17,7 +17,7 @@ Windows 版在同一个本地插件市场中提供两套独立桌宠，共用 Py
 | 插件 | 功能 |
 | --- | --- |
 | 白龙娘 `bailong-pet` | 透明 WebP 动画、拖拽、对话气泡、可选工作状态和 Codex 额度展示 |
-| DSH 白龙 `dsh-dragon` | MP4 绿幕播放、白龙娘托盘图标、点击和拖拽互动、`dragon_control` 接口 |
+| DSH 白龙 `dsh-dragon` | MP4 与透明 VP9 WebM、角色切换、同进程多宠、待办提醒、可选 Codex 工作状态联动 |
 
 ### 随附素材
 
@@ -40,8 +40,9 @@ cd codex-adapter
 
 ### 使用和开发
 
-- DSH 白龙可通过系统托盘显示、隐藏或切换鼠标穿透。右键可以调整播放、开启随机气泡和边缘探头，或触发黄金回旋。
-
+- DSH 白龙可通过托盘或可选的 **Ctrl+Alt+P** 快捷键显隐。右键可新增桌宠、切换角色、设置一条倒计时提醒或隐藏菜单项。同素材、同速率的待机动作共享解码器。
+- 自定义角色可使用绿幕 MP4 或透明 VP9 WebM。播放透明 WebM 需要将带 `libvpx-vp9` 的 FFmpeg 加入 PATH。
+- DSH 工作状态联动需在 Codex 的 **设置 → Hooks** 中审阅并信任。已验证 Windows hook 命令可以驱动桌宠切换动作。Codex 自动触发的完整流程仍待验证。
 - 在 Codex 新聊天中可请求启动桌宠、播放动作或显示气泡。白龙娘还支持通过桌宠菜单查询 Codex 额度。
 - [详细安装和自启动说明](codex-adapter/README.md)
 - [白龙娘使用手册](codex-adapter/BAILONG.md)
