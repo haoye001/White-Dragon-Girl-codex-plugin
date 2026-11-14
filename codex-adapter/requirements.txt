@@ -4,3 +4,8 @@ opencv-python>=4.10
 numpy>=2
 Pillow==13.0.0
 lunar-python>=1.4.8,<2
+winrt-Windows.Media.Control>=3,<4; platform_system == "Windows"
+winrt-Windows.Media>=3,<4; platform_system == "Windows"
+winrt-Windows.Foundation>=3,<4; platform_system == "Windows"
+winrt-Windows.Foundation.Collections>=3,<4; platform_system == "Windows"
+winrt-Windows.Storage.Streams>=3,<4; platform_system == "Windows"

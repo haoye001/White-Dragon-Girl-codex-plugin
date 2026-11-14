@@ -21,16 +21,28 @@ Windows 下可在右键菜单启用全局显隐快捷键，默认是 **Ctrl+Alt+
 - **切换角色**可从右键选择「大肥鱼」或「默认白龙」。随附的大肥鱼角色包含 106 段透明 WebM。[素材来源与许可](plugins/dsh-dragon/assets/characters/大肥鱼/ASSETS.md)
 - **自定义角色**可放在 `plugins/dsh-dragon/assets/characters/<角色名>/`。待机素材可命名为 `idle` 或 `待机呼吸休闲`，也可放在 `idle` 子目录。MP4 使用绿幕处理。透明 VP9 WebM 需要支持 `libvpx-vp9` 的 FFmpeg。请将 `ffmpeg.exe` 放进本地市场的 `.runtime/Scripts/` 或加入 PATH。可运行 `ffmpeg -decoders | Select-String libvpx-vp9` 检查 PATH 版本。
 - **新增桌宠**最多可同时打开八只。各自保存角色、位置和播放设置。动画在后台解码，相同素材与速率的待机动画共享解码器。短待机循环复用原始 RGBA 帧，全部桌宠共用 96 MiB 的帧缓存额度。超出额度的内容继续流式解码，单次互动独立播放。
-- **Codex 联动**通过 `dragon_control` 的 `activity` 命令接收 `thinking`、`working`、`attention`、`idle`。同时有多个会话时，优先显示待确认、工作、思考；一个会话结束后，其余会话的状态继续生效。Hooks 只传入事件对应的状态和用于区分会话与轮次的哈希，状态保存在内存。统一安装会生成可选 hooks，可在 Codex 的 **设置 → Hooks** 中审阅并信任。已用直接调用验证单会话切换，用模拟事件验证多会话聚合。Codex 自动联动的完整链路仍待验证。
+- **Codex 联动**通过 `dragon_control` 的 `activity` 命令接收 `thinking`、`working`、`attention`、`idle`。多个会话同时活跃时，按待确认、工作、思考的顺序显示。一个会话结束后，其余会话的状态继续生效。Hooks 只传入事件对应的状态和用于区分会话与轮次的哈希，状态保存在内存。统一安装会生成可选 hooks，可在 Codex 的 **设置 → Hooks** 中审阅并信任。已用真实 Codex CLI 和本地模拟模型验证工具调用及会话结束时的自动联动。
 - **查询 Codex 额度**可在右键菜单或托盘触发，后台通过安装时配置的 Codex 路径读取本机登录账户额度，并显示剩余百分比、重置时间和查询时间。
 - **桌面小工具**可抽取每日一签，查看公历、农历节日和节气，设置公历生日提醒。节日与节气提醒、整点报时可单独开启，整点以系统提示音和气泡报时。快捷启动可选取本机 `.exe` 并从菜单打开。
 - **查看天气**位于「桌面小工具」，首次打开默认填入成都。成都直接使用已知坐标，其他城市会先检索。气泡显示气温、体感、湿度和数据时间。连接临时失败时会重试一次，仅在主动查询时联网。[Open-Meteo 天气接口](https://open-meteo.com/en/docs)
+- **桌面灵动岛**可从右键或托盘打开，显示下一条待办、Codex 会话状态和 Windows 当前媒体。点标题收起，点「关闭」隐藏并停止定时读取。播放器需向 Windows 系统媒体控件提供歌曲和进度。可为当前曲目加载 UTF-8 `.lrc`，也可主动点「在线找歌词」，将曲目名称、歌手、专辑和时长发给 LRCLIB 查询。切歌后清除上一曲歌词。[LRCLIB](https://lrclib.net/docs)
+
+### 桌宠对话和识屏
+
+- **桌宠对话**可从右键或托盘打开。在「模型设置」填写 Chat Completions 兼容接口的基础地址或完整地址，再填模型名称和服务需要的 API Key。远程地址使用 HTTPS，本机模型可用回环 HTTP。API Key 只保留在当前进程，重启后需重新输入。回复支持流式显示和停止。对话文本保存在 Windows 的 `%LOCALAPPDATA%\DSHDragon\chat-history.json`，可在窗口中切换或删除。[Chat Completions 接口](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)
+- **朗读回复**在对话窗口单独开启，使用 Windows 本地语音。关闭窗口或点击「停止」可中止朗读。
+- **截图问答**从右键或托盘进入。先配置支持图片输入的模型，再在鼠标所在屏幕框选。松手后可在对话窗口预览，按 Esc 可放弃框选。点击「发送」才会提交预览图片，聊天历史只保存问答文本。
+- **主动识屏**默认关闭。先在右键的「主动识屏 → 识屏设置」选择允许读取的应用，并设置最短间隔和每日上限，再确认开启。当前台停留在白名单应用时，桌宠会尝试获取该窗口内容并用模型回复气泡。切换模型地址、修改白名单或重启桌宠都需要重新开启。隐藏桌宠时暂停，本地历史不保存主动识屏截图。
+
+### 安装与启动
 
 在本目录运行以下命令。首次安装需要提供可信的 Python 3.11+ 绝对路径，Python 需包含 Tk。
 
 ```powershell
 .\install.ps1 -PythonPath 'D:\python\python.exe'
 ```
+
+更新已有安装时重新运行安装脚本，以安装 Windows 媒体读取依赖。
 
 默认在 `bailong-local` 下安装两个插件。可用 `-Plugins bailong-pet` 仅安装白龙娘，也可用 `-VideoSource 'D:\Desktop\素材库'` 导入额外的 DSH MP4。仓库随附 DSH 待机视频。若已有同名市场指向旧目录，请在 Codex 插件管理中移除旧市场登记后重新运行安装。
 

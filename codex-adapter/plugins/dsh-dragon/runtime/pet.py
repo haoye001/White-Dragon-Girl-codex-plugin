@@ -19,6 +19,7 @@ from PySide6.QtWidgets import QApplication, QFileDialog, QWidget, QMenu, QInputD
 from activity import Activity
 from media import ClipPool
 from dialogs import TodoDialog, edit_hotkey, edit_menu, edit_settings
+from island import MediaDashboard
 from widgets import DesktopWidgets
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -166,6 +167,10 @@ class Pet(QWidget):
         self.widgets = DesktopWidgets(self)
         self.activity = Activity()
         self.activity_state = ('idle', 0)
+        self.dashboard = MediaDashboard(self)
+        self.chat_window = None
+        self.screen_watcher = None
+        self.selecting_screenshot = False
         self.activity_timer = QTimer(self)
         self.activity_timer.timeout.connect(self.refresh_activity)
         self.activity_timer.start(15_000)
@@ -293,6 +298,10 @@ class Pet(QWidget):
         passthrough.setCheckable(True)
         passthrough.toggled.connect(self.set_passthrough)
         menu.addAction('查询 Codex 额度', self.widgets.request_quota)
+        menu.addAction('桌面灵动岛', self.dashboard.show)
+        menu.addAction('桌宠对话', self.open_chat)
+        menu.addAction('截图问答', self.queue_screenshot)
+        menu.addAction('开启 / 停止主动识屏', self.toggle_screen_watcher)
         menu.addAction('退出桌宠', QApplication.quit)
         self.tray.setContextMenu(menu)
         self.tray.show()
@@ -322,6 +331,8 @@ class Pet(QWidget):
         self.glide.stop()
         self.spin_timer.stop()
         self.angle = 0
+        if self.owner is None and getattr(self, 'screen_watcher', None) is not None:
+            self.screen_watcher.pause()
         super().hideEvent(event)
 
     def release_clip(self):
@@ -495,6 +506,14 @@ class Pet(QWidget):
         else:
             menu.addAction('待办提醒', self.edit_todos)
         host.widgets.add_actions(menu)
+        menu.addAction('桌面灵动岛', host.dashboard.show)
+        menu.addAction('桌宠对话', host.open_chat)
+        menu.addAction('截图问答', host.queue_screenshot)
+        if sys.platform == 'win32':
+            vision = menu.addMenu('主动识屏')
+            enabled = host.screen_watcher is not None and host.screen_watcher.timer.isActive()
+            vision.addAction('停止识屏' if enabled else '开启识屏', host.toggle_screen_watcher)
+            vision.addAction('识屏设置…', host.configure_screen_watcher)
         animations = menu.addMenu('播放动作（全部素材）')
         for name in sorted(self.actions):
             action = animations.addAction(name)
@@ -588,6 +607,55 @@ class Pet(QWidget):
         self.set_locked(switches.pop('locked'))
         for key, enabled in switches.items():
             self.settings.setValue(key, enabled)
+
+    def chat(self):
+        if self.chat_window is None:
+            from chat_window import ChatWindow
+            self.chat_window = ChatWindow(self)
+            QApplication.instance().aboutToQuit.connect(self.chat_window.stop)
+        return self.chat_window
+
+    def open_chat(self):
+        chat = self.chat()
+        chat.show()
+        chat.raise_()
+        chat.activateWindow()
+
+    def queue_screenshot(self):
+        if self.selecting_screenshot:
+            return
+        self.selecting_screenshot = True
+        QTimer.singleShot(120, self.capture_question)
+
+    def capture_question(self):
+        from screen_tools import select_screenshot
+        chat = self.chat()
+        try:
+            if chat.pending is not None:
+                self.notify('截图问答', '请等待当前回复结束，或先停止回复。')
+                return
+            image = select_screenshot()
+        except RuntimeError as error:
+            self.notify('截图问答', str(error))
+            return
+        finally:
+            self.selecting_screenshot = False
+        if image is not None:
+            chat.attach(image)
+            self.open_chat()
+
+    def watcher(self):
+        if self.screen_watcher is None:
+            from screen_tools import ScreenWatcher
+            self.screen_watcher = ScreenWatcher(self, self.chat())
+            QApplication.instance().aboutToQuit.connect(self.screen_watcher.stop)
+        return self.screen_watcher
+
+    def toggle_screen_watcher(self):
+        self.watcher().toggle()
+
+    def configure_screen_watcher(self):
+        self.watcher().configure()
 
     def set_auto(self, enabled):
         self.auto_enabled = enabled
