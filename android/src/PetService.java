@@ -1,6 +1,7 @@
 package io.github.haoye001.dragonpet;
 
 import android.app.Notification;
+import android.app.AlertDialog;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
@@ -19,7 +20,12 @@ import android.view.ViewConfiguration;
 import android.view.WindowManager;
 import android.widget.ImageView;
 import java.io.IOException;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.Random;
+import org.json.JSONArray;
+import org.json.JSONException;
 
 public final class PetService extends Service {
     private static final String STOP = "stop";
@@ -30,11 +36,15 @@ public final class PetService extends Service {
     private WindowManager.LayoutParams layout;
     private ImageView pet;
     private AnimatedImageDrawable animation;
+    private AlertDialog menu;
+    private String[] actionNames;
+    private String[] actionFiles;
     private boolean attached;
     private boolean dragging;
     private float downX, downY;
     private int startX, startY;
-    private final Runnable close = this::stopSelf;
+    private final Runnable openMenu = this::showMenu;
+    private boolean menuOpened;
 
     @Override public IBinder onBind(Intent intent) { return null; }
 
@@ -51,7 +61,7 @@ public final class PetService extends Service {
         startForeground(1, new Notification.Builder(this, "pet")
             .setSmallIcon(android.R.drawable.ic_menu_myplaces)
             .setContentTitle("白龙娘正在桌面陪伴")
-            .setContentText("长按桌宠即可关闭")
+            .setContentText("长按桌宠可选择动作或关闭")
             .addAction(new Notification.Action.Builder(null, "关闭桌宠", stop).build())
             .setOngoing(true).build());
         if (!Settings.canDrawOverlays(this)) {
@@ -61,7 +71,7 @@ public final class PetService extends Service {
         if (pet == null) {
             try {
                 showPet();
-            } catch (IOException | RuntimeException error) {
+            } catch (IOException | JSONException | RuntimeException error) {
                 android.util.Log.e("DragonPet", "Could not show pet", error);
                 stopSelf();
             }
@@ -69,7 +79,8 @@ public final class PetService extends Service {
         return START_NOT_STICKY;
     }
 
-    private void showPet() throws IOException {
+    private void showPet() throws IOException, JSONException {
+        loadCatalog();
         window = getSystemService(WindowManager.class);
         int side = Math.round(144 * getResources().getDisplayMetrics().density);
         layout = new WindowManager.LayoutParams(side, side, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
@@ -86,6 +97,35 @@ public final class PetService extends Service {
         attached = true;
     }
 
+    private void loadCatalog() throws IOException, JSONException {
+        StringBuilder json = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(
+                getAssets().open("animations.json"), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) json.append(line);
+        }
+        JSONArray actions = new JSONArray(json.toString());
+        actionNames = new String[actions.length()];
+        actionFiles = new String[actions.length()];
+        for (int i = 0; i < actions.length(); i++) {
+            actionNames[i] = actions.getJSONObject(i).getString("name");
+            actionFiles[i] = actions.getJSONObject(i).getString("file");
+        }
+    }
+
+    private void showMenu() {
+        menuOpened = true;
+        if (menu != null && menu.isShowing()) return;
+        menu = new AlertDialog.Builder(this, AlertDialog.THEME_DEVICE_DEFAULT_LIGHT)
+            .setTitle("选择动作")
+            .setItems(actionNames, (dialog, index) -> playAction(actionFiles[index]))
+            .setNeutralButton("关闭桌宠", (dialog, index) -> stopSelf())
+            .setNegativeButton("取消", null)
+            .create();
+        menu.getWindow().setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY);
+        menu.show();
+    }
+
     private int screenHeight() { return getResources().getDisplayMetrics().heightPixels; }
 
     private boolean handleTouch(MotionEvent event) {
@@ -96,7 +136,8 @@ public final class PetService extends Service {
                 startX = layout.x;
                 startY = layout.y;
                 dragging = false;
-                pet.postDelayed(close, ViewConfiguration.getLongPressTimeout());
+                menuOpened = false;
+                pet.postDelayed(openMenu, ViewConfiguration.getLongPressTimeout());
                 return true;
             case MotionEvent.ACTION_MOVE:
                 int dx = Math.round(event.getRawX() - downX);
@@ -104,7 +145,7 @@ public final class PetService extends Service {
                 int slop = ViewConfiguration.get(this).getScaledTouchSlop();
                 if (!dragging && Math.hypot(dx, dy) > slop) {
                     dragging = true;
-                    pet.removeCallbacks(close);
+                    pet.removeCallbacks(openMenu);
                 }
                 if (dragging) {
                     int width = getResources().getDisplayMetrics().widthPixels;
@@ -114,11 +155,11 @@ public final class PetService extends Service {
                 }
                 return true;
             case MotionEvent.ACTION_UP:
-                pet.removeCallbacks(close);
-                if (!dragging) pet.performClick();
+                pet.removeCallbacks(openMenu);
+                if (!dragging && !menuOpened) pet.performClick();
                 return true;
             case MotionEvent.ACTION_CANCEL:
-                pet.removeCallbacks(close);
+                pet.removeCallbacks(openMenu);
                 return true;
             default:
                 return false;
@@ -126,8 +167,12 @@ public final class PetService extends Service {
     }
 
     private void playAction() {
+        playAction(ACTIONS[random.nextInt(ACTIONS.length)]);
+    }
+
+    private void playAction(String file) {
         try {
-            play(ACTIONS[random.nextInt(ACTIONS.length)], false);
+            play(file, IDLE.equals(file));
         } catch (IOException error) {
             android.util.Log.e("DragonPet", "Could not play animation", error);
         }
@@ -163,7 +208,8 @@ public final class PetService extends Service {
     }
 
     @Override public void onDestroy() {
-        if (pet != null) pet.removeCallbacks(close);
+        if (pet != null) pet.removeCallbacks(openMenu);
+        if (menu != null) menu.dismiss();
         clearAnimation();
         if (attached) window.removeView(pet);
         super.onDestroy();

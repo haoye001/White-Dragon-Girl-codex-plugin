@@ -24,7 +24,7 @@ public final class MainActivity extends Activity {
         title.setTextSize(28);
         content.addView(title);
         TextView instructions = new TextView(this);
-        instructions.setText("轻点播放动作，拖动调整位置，长按关闭。\n首次使用请允许显示在其他应用上层。");
+        instructions.setText("轻点播放动作，拖动调整位置，长按打开动作菜单。\n首次使用请允许显示在其他应用上层。");
         instructions.setPadding(0, padding, 0, padding);
         content.addView(instructions);
         start = button(content, "开启桌宠", view -> {
