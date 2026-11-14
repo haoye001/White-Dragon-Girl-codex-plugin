@@ -1,6 +1,6 @@
 # 白龙娘桌宠 Android 版
 
-[下载已签名的 APK](https://github.com/haoye001/GPT-/raw/refs/heads/main/android/DragonPet-Android.apk)
+[下载已签名的 APK](https://github.com/hyG0611/White-Dragon-Girl-codex-plugin/raw/refs/heads/main/android/DragonPet-Android.apk)
 
 安装后打开「白龙娘桌宠」，授予显示在其他应用上层的权限，然后点击「开启桌宠」。Android 9 及以上可用。轻点随机播放招手、比心、庆祝或困倦动画，拖动移动，长按关闭。也可在应用首页关闭桌宠。应用无需网络或 ChatGPT 账号。
 

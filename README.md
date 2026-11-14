@@ -4,7 +4,7 @@
 
 ## Android 版
 
-支持 Android 9 及以上。下载并安装白龙娘桌宠，打开应用后按提示授权「显示在其他应用上层」，返回应用后点「开启桌宠」。[下载 APK](https://github.com/haoye001/GPT-/raw/refs/heads/main/android/DragonPet-Android.apk)
+支持 Android 9 及以上。下载并安装白龙娘桌宠，打开应用后按提示授权「显示在其他应用上层」，返回应用后点「开启桌宠」。[下载 APK](https://github.com/hyG0611/White-Dragon-Girl-codex-plugin/raw/refs/heads/main/android/DragonPet-Android.apk)
 
 开启后可返回手机桌面或切换到其他应用。轻点白龙娘播放动作，拖动调整位置，长按关闭。五段透明动画已内置，应用可离线使用，无需登录或打开 ChatGPT。
 
